@@ -9,11 +9,12 @@ import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{array, col, transform, udf, when}
+import org.apache.spark.sql.functions.{array, col, max, min, transform, udf, when}
 import org.apache.spark.sql.types.{DoubleType, StringType, StructField, StructType}
 import breeze.linalg._
 import breeze.plot._
 import breeze.numerics
+
 import scala.+:
 
 
@@ -47,6 +48,8 @@ class Assignment {
 
   val dataD2: DataFrame = spark.read.format("csv").option("header", "true").schema(schema1).load("/home/sayhelloxd/IdeaProjects/casey-haider/scala/data/dataD2.csv")
 
+  val minmaxAD2 = dataD2.agg(min("a"), max("a")).head()
+  val minmaxBD2 = dataD2.agg(min("b"), max("b")).head()
 
   //dirtyData.filter(col("LABEL").isNotNull && !col("LABEL").contains("null") && !col("LABEL").contains("Unknown") &&col("a").isNotNull&&col("b").isNotNull && col("a")<=1.06882 && col("a") >= -0.98484 && col("b") <= 9.81266 && col("b") >= 0.06052)
   // .filter(!col("LABEL").contains("Unknown"))
@@ -58,6 +61,9 @@ class Assignment {
   // the data frame to be used in task 2
   val dataD3: DataFrame = spark.read.format("csv").option("header", "true").schema(schema2).load("/home/sayhelloxd/IdeaProjects/casey-haider/scala/data/dataD3.csv")
 
+  val minmaxAD3 = dataD3.agg(min("a"), max("a")).head()
+  val minmaxBD3 = dataD3.agg(min("b"), max("b")).head()
+  val minMaxCD3 = dataD3.agg(min("c"), max("c")).head()
 
   // the data frame to be used in task 3 (based on dataD2 but containing numeric labels)
   val dataD2WithLabels: DataFrame = dataD2.withColumn("numeric_labels", when(dataD2("LABEL") === "Fatal", 0).otherwise(1))  // REPLACE with actual implementation
@@ -77,7 +83,7 @@ class Assignment {
 
     //Initializing KMeans object with seed 1 and k clusters, setting featurescol to scaledFeatures to produced scaled results
     val kMeans = new org.apache.spark.ml.clustering.KMeans()
-      .setK(k).setSeed(1)//.setFeaturesCol("scaledFeatures")
+      .setK(k).setSeed(1).setFeaturesCol("scaledFeatures")
     //Initializing pipeline so it will take assembler, scalar and KMeans object
     val pipeline = new Pipeline().setStages(Array(assembler, scalar, kMeans))
     //fitting the data in pipeline
@@ -85,7 +91,9 @@ class Assignment {
     //Selection last instance which is KMeans in our case to use as an object for KModel
     val KModel = pipelineModel.stages.last.asInstanceOf[KMeansModel]
     //mapping Array[Array[Double]] to Array[Tuple2[Array]]
-    var doubleArray: Array[(Double, Double)] = KModel.clusterCenters.map(_.toArray).map { case Array(f1, f2) => (f1, f2) }
+    // scaling back a = > a = [0, 1] => [a_min, a_max]
+    //new_a = a0* (a_max - a_min) + a_min  for all of features
+    var doubleArray: Array[(Double, Double)] = KModel.clusterCenters.map(_.toArray).map { case Array(f1, f2) => ((f1*(minmaxAD2.getDouble(1)-minmaxAD2.getDouble(0))+minmaxAD2.getDouble(0)), (f2 * (minmaxBD2.getDouble(1)-minmaxBD2.getDouble(0)) + minmaxBD2.getDouble(0))) }
     doubleArray
   }
 
@@ -107,7 +115,9 @@ class Assignment {
     //Selection last instance which is KMeans in our case to use as an object for KModel
     val KModel = pipelineModel.stages.last.asInstanceOf[KMeansModel]
     //mapping Array[Array[Double]] to Array[Tuple2[Array]]
-    var doubleArray: Array[(Double, Double, Double)] = KModel.clusterCenters.map(_.toArray).map { case Array(f1, f2, f3) => (f1, f2, f3) }
+    // scaling back a = > a = [0, 1] => [a_min, a_max]
+    //new_a = a0* (a_max - a_min) + a_min  for all of features
+    var doubleArray: Array[(Double, Double, Double)] = KModel.clusterCenters.map(_.toArray).map { case Array(f1, f2, f3) => ((f1*(minmaxAD3.getDouble(1)-minmaxAD3.getDouble(0))+minmaxAD3.getDouble(0)), (f2 * (minmaxBD3.getDouble(1)-minmaxBD3.getDouble(0)) + minmaxBD3.getDouble(0)) , (f3 * (minMaxCD3.getDouble(1)-minMaxCD3.getDouble(0)) + minMaxCD3.getDouble(0)) ) }
     doubleArray
 
 
@@ -130,7 +140,9 @@ class Assignment {
     //Selection last instance which is KMeans in our case to use as an object for KModel
     val KModel = pipelineModel.stages.last.asInstanceOf[KMeansModel]
     //mapping Array[Array[Double]] to Array[Tuple2[Array]]
-    var doubleArray: Array[(Double, Double)] = KModel.clusterCenters.map(_.toArray).map { case Array(f1, f2, f3) => (f1, f2, f3) }.filter{case (f1,f2,f3) => f3==0.0}.map{case(f1,f2,f3)=>(f1,f2)}
+    // scaling back a = > a = [0, 1] => [a_min, a_max]
+    //new_a = a0* (a_max - a_min) + a_min  for all of features
+    var doubleArray: Array[(Double, Double)] = KModel.clusterCenters.map(_.toArray).map { case Array(f1, f2, f3) => (f1, f2, f3) }.filter{case (f1,f2,f3) => f3==0.0}.map{case(f1,f2,f3)=>((f1*(minmaxAD2.getDouble(1)-minmaxAD2.getDouble(0))+minmaxAD2.getDouble(0)),(f2 *(minmaxBD2.getDouble(1)-minmaxBD2.getDouble(0))+minmaxBD2.getDouble(0)))}
     doubleArray.foreach(println)
     doubleArray
   }
@@ -171,7 +183,21 @@ class Assignment {
     //Done Through Recursion
     KMeans_(high, scalarTransformed)
 
+    import breeze.linalg._
+    import breeze.plot._
+
+    val f = Figure()
+    val p = f.subplot(0)
+    val x = results.map{case (f1,f2) =>(f1.toDouble)}
+    val y = results.map { case (f1, f2) => (f2) }
+
+    p += plot(x,y)
+    p.xlabel = "K Values"
+    p.ylabel = "Silhoutte Scores"
+    Thread.sleep(10000L)
+    results
   }
+
 
 }
 
